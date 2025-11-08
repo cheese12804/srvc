@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Web Remote Desktop</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #222;
+        color: #f5f5f5;
+      }
+      #video {
+        width: 100vw;
+        height: 100vh;
+        object-fit: contain;
+        background: black;
+      }
+      #overlay {
+        position: fixed;
+        top: 1rem;
+        left: 1rem;
+        padding: 0.5rem 1rem;
+        background: rgba(0, 0, 0, 0.5);
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="overlay">Click the video to send control events.</div>
+    <video id="video" autoplay playsinline></video>
+    <script>
+      async function start() {
+        const pc = new RTCPeerConnection();
+        const video = document.getElementById("video");
+        pc.ontrack = (event) => {
+          [video.srcObject] = event.streams;
+        };
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        const response = await fetch("/offer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sdp: offer.sdp, type: offer.type }),
+        });
+        const answer = await response.json();
+        await pc.setRemoteDescription(answer);
+
+        const ws = new WebSocket(`ws://${location.host}/ws/control`);
+        const sendControl = (type, payload) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type, payload }));
+          }
+        };
+
+        video.addEventListener("mousemove", (event) => {
+          sendControl("mousemove", { x: event.offsetX, y: event.offsetY });
+        });
+        video.addEventListener("mousedown", (event) => {
+          sendControl("mousedown", { button: event.button });
+        });
+        window.addEventListener("keydown", (event) => {
+          sendControl("keydown", { key: event.key });
+        });
+      }
+      start();
+    </script>
+  </body>
+</html>
